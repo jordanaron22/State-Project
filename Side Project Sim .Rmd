@@ -8,7 +8,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-init_full_true_og <- c(0.5,.5)
+init_full_true_og <- c(0.75,.25)
 tran_full_true_og <- matrix(0,2,2)
 tran_full_true_og[1,1] <- .9
 tran_full_true_og[1,2] <- .1
@@ -64,14 +64,15 @@ GenerateMS <- function(n,p){
 n <- 1000
 t <- 21
 p <- .5
+p<- 0
 data_full_sim <- GenerateAll(n,t,p)
 data_sim <- data_full_sim[[1]]
 stayer_mat_sim <- data_full_sim[[2]]
 
-data_sim[,2:5] <- NaN
-data_sim[,7:10] <- NaN
-data_sim[,12:15] <- NaN
-data_sim[,17:20] <- NaN
+# data_sim[,2:5] <- NaN
+# data_sim[,7:10] <- NaN
+# data_sim[,12:15] <- NaN
+# data_sim[,17:20] <- NaN
 
 all_patterns_sim <- GetPatterns(data_sim)
 unique_patterns_sim <- as.data.frame(table(all_patterns_sim))
@@ -105,10 +106,6 @@ for (i in 1:dim(pattern_data_sim)[1]){
 }
 ```
 
-```{r}
-
-(stayer_vec_sim <- CalcStayer(pattern_data_sim,init_full_true_og,tran_full_true_og,stayer_vec_sim))
-```
 
 ```{r}
 init <- InitialProbPattern(pattern_data_sim,freq_vec_sim)
@@ -143,3 +140,11 @@ freq_vec_sim[length(freq_vec_sim)] * stayer_vec_sim[2]
 
 p * n * 1/2
 ```
+
+```{r}
+stayer_mat <- matrix(0,dim(pattern_data_sim)[1],2)
+stayer_mat[1,1]<- 250 / freq_vec_sim[1]
+stayer_mat[dim(pattern_data_sim)[1],2] <- 250 / freq_vec_sim[length(freq_vec_sim)]
+```
+
+
