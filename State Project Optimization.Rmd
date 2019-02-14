@@ -1,0 +1,339 @@
+---
+title: "State Project Testing Values of Pi"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#Generates data
+#n is number of individuals
+#t is number of time points
+#p is the proportion of stayers in the zero state 
+GenerateAll <- function(n,t,p0,p1){
+  #Stayer_vec_true is a vector where a 0/1 at the ith index says that individual i is either a mover/stayer
+  stayer_vec_true <- GenerateMS(n,p0,p1)
+  #data_mat will be the created data matrix
+  data_mat <- matrix(0L, nrow = n, ncol = t)
+  
+  #Creates only the initial values for the data
+  for (i in 1:n){
+    #only enters this if statement if mover
+    #As data was initialized to all 0's dont need to change stayer data
+    if (stayer_vec_true[i] == 0){
+      #Have to add a -1 at the end so we end up with a state space of 0/1 rather than 1/2
+      data_mat[i,1] <- which(rmultinom(1,1,init_initial) == 1) - 1
+    } else if (stayer_vec_true[i] == 2){
+      data_mat[i,1] <- 1
+    }
+  }
+  
+  #Creates the rest of the data
+  for (i in 1:n){
+    #starts at 2 since we already created the initial values
+    for (j in 2:t){
+      #similar as above, only enter if mover
+      if(stayer_vec_true[i] == 0){
+        #P_current is the row of the transition matrix corresponding to the state at time j-1
+        p_current <- tran_initial[data_mat[i,j-1]+1,]
+        
+        #creates the next state at time j depending only on the state at time j-1
+        data_mat[i,j] <- which(rmultinom(1,1,p_current) == 1) - 1
+      } else if (stayer_vec_true[i] == 2){
+        data_mat[i,j] <- 1
+      }
+    }
+  }
+  return(list(data_mat, stayer_vec_true))
+}
+```
+
+```{r}
+#Generates a vector of 0/1
+#A 1 at the ith index says that the ith individual is a stayer in the zero state 
+#n and p are the same as above
+#Used only in the function GenerateAll
+GenerateMS <- function(n,p0,p1){
+
+  
+  stayer_vec <- numeric(n)
+  for (i in 1:n){
+    rand <- runif(1)
+    if (rand < p0){
+      stayer_vec[i] <- 1
+    } else if (rand < (p0+p1)){
+      stayer_vec[i] <- 2
+    } 
+  }
+  return(stayer_vec)
+}
+```
+
+```{r}
+#Calculates inital probability vector given data matrix
+InitialProbPattern <- function(data, stayer_vec){
+  init_prob <- numeric(2)
+  
+  for (i in 1:dim(data)[1]){
+    if(stayer_vec[i] == 0){
+      #Need a +1 inside [ ] since data is on the 0/1 scale but indexing matrixes starts at 1
+      init_prob[data[i,1] + 1] <- init_prob[data[i,1]+1] + 1
+    }
+  }
+  
+  return(init_prob/sum(init_prob))
+}
+```
+
+```{r}
+#Normalizes the rows of a matrix to sum to 1
+#Used only in transition matrix calculation
+Normalize <- function(data){
+  for (i in 1:dim(data)[1]){
+    if (sum(data[i,],na.rm = TRUE) != 0){
+      data[i,] <- data[i,]/sum(data[i,])
+    }
+  }
+  return(data)
+}
+```
+
+```{r}
+#Creates a transition matrix from a data matrix
+#idea is to for loop thru both dimensions of the matrix
+#The transition matrix at (i,j) is increased by one every time the data transitions from i to j
+#Normalized sum of rows to 1 at the end
+TransitionProbPattern <- function(data, stayer_vec){
+  
+  n <- dim(data)[1]
+  length <- dim(data)[2]
+  k <- c(0,1)
+  transition <- matrix(0L, nrow = length(k), ncol = length(k))
+
+  for (i in 1:n){
+    ind <- data[i,]
+    for (j in 1:(length(ind) - 1)){
+      if (stayer_vec[i] == 0){
+        #uses which function to find what the state was at time j and what the state was at time j + 1
+        transition[which(ind[[j]] == k),which(ind[[j+1]] == k)] = (transition[which(ind[[j]] == k),which(ind[[j+1]] == k)] + 1)
+      }
+    }
+  }
+
+  return(Normalize(transition))
+}
+
+```
+
+
+
+
+```{r}
+#Sets intial initial and transition parameters
+#I played around with these 
+r_0 <- .7
+init_initial <- c(r_0, 1 - r_0)
+
+p_00 <- .1
+p_11 <- .1
+tran_initial <- t(matrix(c(p_00, 1 - p_00, 1- p_11, p_11),2,2))
+
+#Set initial parameters
+#I played around with these 
+n <- 1000
+t <- 19
+p0 <- .2
+p1 <- .2
+
+#Creates Data
+all_data <- GenerateAll(n,t,p0,p1)
+ms_data <- all_data[[1]]
+stayer_vec_true <- all_data[[2]]
+
+#Calculate True parameters
+#Starts at the (n*p) + 1 row as thats the first mover individual
+#Does not include the stayers in parameter calculation
+ms_init <- InitialProbPattern(ms_data,stayer_vec_true)
+ms_tran <- TransitionProbPattern(ms_data,stayer_vec_true)
+
+#Calculates number of individuals where all the X's are 0's
+zero_count <- 0
+one_count <- 0
+for (ind in 1:dim(ms_data)[1]){
+  if (max(ms_data[ind,]) == 0){
+    zero_count <- zero_count + 1
+  }
+  
+  if (min(ms_data[ind,]) == 1){
+    one_count <- one_count + 1
+  }
+}
+
+#This is the (number of zeros - expected number of zeros if there were no stayers)/number of individuals
+ms_stayer <- c((zero_count -  n*ms_init[1]*ms_tran[1,1]^(t-1))/n, (one_count -  n*ms_init[2]*ms_tran[2,2]^(t-1))/n)
+ms_stayer[ms_stayer < 0] <- 0
+
+ms_data_obs <- ms_data
+freq_vec <- rep(1, dim(ms_data_obs)[1])
+ms_data_obs[,2:6] <- NaN
+ms_data_obs[,8:12] <- NaN
+ms_data_obs[,14:18] <- NaN
+
+# all_patterns <- as.data.frame(GetPatterns(ms_data_obs))
+# unique_patterns <- as.data.frame(table(all_patterns))
+# 
+# pattern_list <- Pattern2Data(unique_patterns)
+# ms_data_obs <- pattern_list[[1]]
+# freq_vec <- pattern_list[[2]]
+
+```
+
+```{r}
+#Calculates the MC evolution probability of an individual in a data matrix
+#The r_0 * prod(p_ij)
+#For instance if the individuals chain was 0 1 0 
+#This would return the product of r_0 * p_01 * p_10
+#Does not take stayer into account at all as thats done in a later fuction
+#Only ever used in the function ProbX
+ProbXind <- function(prob_data,ind, init_0, tran_00,tran_11){
+
+  init_1 <- (1 - init_0)
+  tran_01 <- (1 - tran_00)
+  tran_10 <- (1 - tran_11)
+  
+  init <- c(init_0,init_1)
+  tran <- matrix(c(tran_00, tran_01,tran_10,tran_11),2,2,byrow = T)
+  
+  p_current <- 1
+  
+  #Calculates probability of initial state
+  #If initial state is 0 mulitply by r_0
+  #Otherwise multiply by r_1
+  if (prob_data[ind,1] == 0){
+    p_current <- p_current * init_0
+  } else {
+    p_current <- p_current * init_1
+  }
+  
+  #Calculates probability of the transitions
+  #If statement tree to first find the state at time t - 1
+  #Then finds the state at time t 
+  #For instance if the transition is 0 1 then multiply probability by tran_01
+  
+  power_up <- 1
+  for (time in 1:(dim(prob_data)[2]-1)){
+    if (!is.na(prob_data[ind,(time + 1)])){
+      
+      if (!is.na(prob_data[ind,time])){
+        last_state <- prob_data[ind,time]
+      }
+      
+      powered_up_tran <- tran
+      if(power_up > 1){
+        for (i in 2:power_up){
+          powered_up_tran <- powered_up_tran %*% tran
+        }
+      }
+      
+      if (last_state == 0){
+        if (prob_data[ind, (time+1)] == 0){
+          p_current <- p_current * powered_up_tran[1,1]
+        } else if(prob_data[ind,(time+1)] == 1){
+          p_current <- p_current * powered_up_tran[1,2]
+        }
+        
+      } else if (last_state == 1){
+        if (prob_data[ind,(time+1)] == 0){
+          p_current <- p_current * powered_up_tran[2,1]
+        } else if(prob_data[ind,(time+1)] == 1){
+          p_current <- p_current * powered_up_tran[2,2]
+        }
+      }
+      power_up <- 1
+    } else {
+      power_up <- power_up + 1
+      if (!is.na(prob_data[ind,time])){
+        last_state <- prob_data[ind,time]
+      }
+    }
+    
+    
+  }
+    
+  return(p_current)
+}
+```
+
+```{r}
+#Calculates P(X)
+#Two possibilities 
+#All zeros (with possibility of stayer), and Either all ones or a mixture (with no possibility of stayer) 
+#incorporates (1 - pi_0into the last case)
+LogLike <- function(init_0, tran_00, tran_11, pi_0, pi_1){
+  current_data <- ms_data_obs
+  current_freq_vec <- freq_vec
+  
+  init_1 <- 1 - init_0
+  tran_01 <- 1 - tran_00
+  tran_10 <- 1 - tran_11
+  
+  #The total probability
+  p_total <- 0
+  for (ind in 1:dim(current_data)[1]){
+    p_current <- 0
+    #This is statement is if all states are 0
+    if (max(current_data[ind,], na.rm = T) == 0){
+      p_current <- (pi_0 + (1 - pi_0) * ProbXind(current_data, ind, init_0, tran_00, tran_11)) * freq_vec[ind]
+    } else if (min(current_data[ind,], na.rm = T) == 1){
+      p_current <- (pi_1 + (1 - pi_1) * ProbXind(current_data, ind, init_0, tran_00, tran_11)) * freq_vec[ind]
+    } else {
+      p_current <- ((1 - pi_0 - pi_1) * ProbXind(current_data, ind, init_0, tran_00, tran_11)) * freq_vec[ind]
+    }
+    
+    #Adds log(P(X_i)) to total probability 
+    p_total <- p_total + log(p_current)
+  }
+  
+  
+  return(-p_total)
+}
+```
+
+
+```{r}
+ProbXB <- function(pi_0, pi_1){
+  return(LogLike(ms_init[1], ms_tran[1,1],ms_tran[2,2], pi_0, pi_1))
+}
+
+ProbXC <- function(init_0, tran_00, tran_11){
+  return(LogLike(init_0, tran_00, tran_11, ms_stayer[1], ms_stayer[2]))
+}
+```
+
+```{r}
+LogLikeB <- function(x) LogLike(x[1],x[2],x[3],x[4],x[5])
+A <- matrix(c(1,0,0,0,0,-1,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,-1,-1),11,5,byrow = T)
+b <- c(0,-1,0,-1,0,-1,0,-1,0,-1,-1)
+constrOptim(c(ms_init[1], ms_tran[1,1],ms_tran[2,2], ms_stayer[1], ms_stayer[2]), LogLikeB, NULL, A, b)
+```
+
+```{r}
+#Plots contour of P(X) dependent on pi_0
+#As the above p_1, ygrid isnt in use
+library(plotly)
+ygrid <- seq(0.01,.99,.05)
+#xgrid corresponds to different values of pi_0
+xgrid <- seq(0.01,.99,.05)
+data.fit <-  expand.grid(x = xgrid, y = ygrid)
+
+#creates value grid
+for (i in 1:dim(data.fit)[1]){
+  data.fit[i,3] <- ProbXC(ms_init[1],data.fit[i,1], data.fit[i,2])
+}
+
+#Plots the different values of pi_0 along the x axis while the color tells P(X) with the given pi_0
+plot_ly(x = data.fit[,1], y = data.fit[,2], z = data.fit[,3], type = "contour")
+```
+
