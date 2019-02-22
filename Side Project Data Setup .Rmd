@@ -8,14 +8,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
-GetDate <- function(date){
-  if (date < 20){return(date+2000)} 
-  else {return(date+1900)} 
-}
-```
-
-```{r}
-state_data <- read.csv("Copy of State_residence_Dec112018.csv")
+state_data <- read.csv("State_residence_Dec112018.csv")
 year_data <- read.csv("year registry state.csv")
 dates <- as.matrix(state_data[,6:9])
 states <- as.matrix(state_data[,10:13])
@@ -23,6 +16,11 @@ states <- as.matrix(state_data[,10:13])
 #should be 83
 min_date <- 83
 max_date <- 14
+
+GetDate <- function(date){
+  if (date < 20){return(date+2000)} 
+  else {return(date+1900)} 
+}
 
 catch_data <- matrix(NaN, dim(dates)[1], (GetDate(max_date) - GetDate(min_date) + 1))
 colnames(catch_data) <- c(GetDate(min_date):GetDate(max_date))
@@ -62,14 +60,68 @@ for (i in 1:dim(dates)[1]){
 ```
 
 ```{r}
+GetPatterns <- function(states,stayer_mat){
+  library(plyr)
+  options(scipen = 999)
+  vals <- rep(NaN,dim(states)[1])
+  for (i in 1:dim(states)[1]){
+    val <- ""
+    for(j in 1:dim(states)[2]){
+      if (!is.na(states[i,j])){
+        states_val <- states[i,j] 
+      } else {
+        states_val <- 2 
+      }
+      val <- paste0(val, states_val)
+    }
+    if (!missing(stayer_mat)){
+      val <- paste0(val,stayer_mat[i])
+    }
+    
+    vals[i] <- val
+  }
+  return(vals)
+}
+```
+
+```{r}
+Pattern2Data <- function(unique_patterns, stayer_mat){
+  time_length <- nchar(as.character(unique_patterns$all_patterns[[1]]))
+  n <- dim(unique_patterns)[1]
+  state_mat <- matrix(NaN,n,time_length)
+  freq_vec <- numeric(n)
+  stayer_mat <- numeric(n)
+  for (i in 1:n){
+    freq_vec[i] <- unique_patterns$Freq[[i]]
+    pattern <- unique_patterns$all_patterns[[i]]
+    
+    if (!missing(stayer_mat)){
+      #stayer_mat[i] <- as.integer(substr(pattern, years_to_impute,years_to_impute))
+    }
+    
+    for (time in 1:time_length){
+      new_val <- as.integer(substr(pattern, time,time))
+      if (new_val == 2){
+        new_val <- NaN
+      }
+      state_mat[i,time] <- new_val
+    }
+  }
+  if (!missing(stayer_mat)){
+    return(list(state_mat, freq_vec,stayer_mat))
+  }
+  return(list(state_mat, freq_vec))
+}
+
+```
+
+```{r}
 
 all_patterns <- as.data.frame(GetPatterns(catch_data))
 unique_patterns <- as.data.frame(table(all_patterns))
 
 pattern_list <- Pattern2Data(unique_patterns)
-pattern_data <- pattern_list[[1]]
+state_pattern <- pattern_list[[1]]
 freq_vec <- pattern_list[[2]]
 
-pattern_data <- pattern_data[1:126,]
-freq_vec <- freq_vec[1:126]
 ```

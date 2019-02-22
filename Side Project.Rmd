@@ -15,6 +15,7 @@ numOfStates <- function(data){
 
 ```{r}
 Classification <- function(x_val, y_val){
+  if (is.na(x_val)){return(1)}
   if (x_val == y_val){return(1)}
   else {return(0)}
 }
@@ -31,62 +32,7 @@ Normalize <- function(data){
 }
 ```
 
-```{r}
-GetPatterns <- function(states,stayer_mat){
-  library(plyr)
-  options(scipen = 999)
-  vals <- rep(NaN,dim(states)[1])
-  for (i in 1:dim(states)[1]){
-    val <- ""
-    for(j in 1:dim(states)[2]){
-      if (!is.na(states[i,j])){
-        states_val <- states[i,j] 
-      } else {
-        states_val <- 2 
-      }
-      val <- paste0(val, states_val)
-    }
-    if (!missing(stayer_mat)){
-      val <- paste0(val,stayer_mat[i])
-    }
-    
-    vals[i] <- val
-  }
-  return(vals)
-}
-```
 
-```{r}
-Pattern2Data <- function(unique_patterns, stayer_mat){
-  #SHOULD BE 32
-  time_length <- nchar(as.character(unique_patterns$all_patterns[[1]]))
-  n <- dim(unique_patterns)[1]
-  state_mat <- matrix(NaN,n,time_length)
-  freq_vec <- numeric(n)
-  stayer_mat <- numeric(n)
-  for (i in 1:n){
-    freq_vec[i] <- unique_patterns$Freq[[i]]
-    pattern <- unique_patterns$all_patterns[[i]]
-    
-    if (!missing(stayer_mat)){
-      #stayer_mat[i] <- as.integer(substr(pattern, years_to_impute,years_to_impute))
-    }
-    
-    for (time in 1:time_length){
-      new_val <- as.integer(substr(pattern, time,time))
-      if (new_val == 2){
-        new_val <- NaN
-      }
-      state_mat[i,time] <- new_val
-    }
-  }
-  if (!missing(stayer_mat)){
-    return(list(state_mat, freq_vec,stayer_mat))
-  }
-  return(list(state_mat, freq_vec))
-}
-
-```
 
 ```{r}
 InitialProbPattern <- function(data, freq_vec,stayer_mat, time){
@@ -169,6 +115,7 @@ ForwardIter <- function(data,time,individual,initial_probabilities,transition){
 }
 ```
 
+
 ```{r}
 #JASA method 
 BackwardIter <- function(data,time,individual,transition){
@@ -210,22 +157,6 @@ BackwardIter <- function(data,time,individual,transition){
   return(beta_matrix)
 }
 ```
-
-```{r}
-YgivenXi <- function(data, time, individual, initial_probabilities, transition,stayer_mat){
-  max_time <- dim(data)[2]
-  forward <- ForwardIter(data,max_time,individual,initial_probabilities, transition)
-  backward <- BackwardIter(data,time,individual,transition)
-  
-  num <- forward[[time]] * backward[[time]] * (1 - stayer_mat[individual,1] - stayer_mat[individual,2])
-  denom <- CalcIndLikelihoodFast(data,individual,forward,stayer_mat)
-
-  frac <- num/as.vector(denom)
-  return(frac)
-}
-```
-
-
 
 
 ```{r}
@@ -274,54 +205,6 @@ CalcIndLikelihoodFast <- function(data, individual,forward, stayer_mat){
 }
 ```
 
-```{r}
-#tends to 1 
-#Could be a problem 
-CalcStayer <- function(data,initial_probabilities, transition, stayer_mat){
-  max_time <- dim(data)[2]
-  for (i in 1:dim(data)[1]){
-    forward <- ForwardIter(data,max_time,i,initial_probabilities, transition)
-    if (var(data[i,], na.rm = TRUE) != 0){
-      stayer_mat[i,1] <- 0
-      stayer_mat[i,2] <- 0
-    } else {
-      if(max(data[i,], na.rm = TRUE) == 0){
-        stayer_mat[i,1] <- stayer_mat[i,1]/(stayer_mat[i,1] + ((1 - stayer_mat[i,1])*sum(forward[[max_time]])))
-        stayer_mat[i,2] <- 0
-      } else {
-        stayer_mat[i,1] <- 0
-        stayer_mat[i,2] <- stayer_mat[i,2]/(stayer_mat[i,2] + ((1 - stayer_mat[i,2])*sum(forward[[max_time]])))
-      }
-    }
-  }
-  return(stayer_mat)
-}
-```
-
-```{r}
-Vec2Mat <- function(data, stayer_vec){
-  stayer_mat <- matrix(0,dim(data)[1],2)
-  for (i in 1:dim(data)[1]){
-    max_val <- max(data[i,], na.rm = T)
-    min_val <- min(data[i,], na.rm = T)
-    
-    if (max_val == 1 & min_val == 1){
-      stayer_mat[i,2] <- stayer_vec[2]
-    } 
-    else if (max_val == 0 & min_val == 0){
-      stayer_mat[i,1] <- stayer_vec[1]
-    } 
-  }
-  return(stayer_mat)
-}
-```
-
-```{r}
-Mat2Vec <- function(stayer_mat){
-  stayer_vec <- c(max(stayer_mat[,1]), max(stayer_mat[,2]))
-  return(stayer_vec)
-}
-```
 
 ```{r}
 CalcLikelihoodPattern <- function(data, initial_probabilities,transition, freq_vec, stayer_mat){
@@ -337,10 +220,17 @@ CalcLikelihoodPattern <- function(data, initial_probabilities,transition, freq_v
 
 ```{r}
 CalcIndLikelihood <- function(data, individual, initial_probabilities,transition, stayer_mat){
+  
   forward <- ForwardIter(data,dim(data)[2],individual,initial_probabilities,transition)
   forward_sum <- sum(forward[[dim(data)[2]]])
   
-  likelihood <- stayer_mat[individual,1] + stayer_mat[individual,2] + ((1 - stayer_mat[individual,1] - stayer_mat[individual,2]) * forward_sum)
+  if (length(stayer_mat) > 2){
+    stayer_vec <- stayer_mat[individual,]
+  } else {
+    stayer_vec <- stayer_mat 
+  }
+  
+  likelihood <- stayer_vec[1] + stayer_vec[2] + ((1 - stayer_vec[1] - stayer_vec[2]) * forward_sum)
   return(likelihood)
 }
 ```
