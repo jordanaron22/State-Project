@@ -1,0 +1,102 @@
+---
+title: "State Project EDA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+load("StateProjectSlow.rda")
+ms_init <- state_project_parameters[[1]]
+ms_tran <- state_project_parameters[[2]]
+pi_0 <- state_project_parameters[[3]]
+pi_1 <- state_project_parameters[[4]]
+
+locally_decoded <- LocalDecode(state_pattern,ms_init,ms_tran,pi_0,pi_1)
+
+CalcLikelihoodPattern(state_pattern, ms_init,ms_tran,freq_vec,pi_0,pi_1)
+
+CalcLikelihoodPattern(locally_decoded, ms_init,ms_tran,freq_vec,pi_0,pi_1)
+CalcLikelihoodPattern(decoded_chains, ms_init,ms_tran,freq_vec,pi_0,pi_1)
+
+```
+
+```{r}
+
+row_sum <- rowSums(locally_decoded)
+
+rs_0 <- 0
+rs_1 <- 0
+for (i in 1:length(row_sum)){
+  if (row_sum[i] == 0){
+    rs_0 <- rs_0 + freq_vec[i]
+  }
+  if (row_sum[i] == 32){
+    rs_1 <- rs_1 + freq_vec[i]
+  }
+}
+
+
+tran_01 <- numeric(32)
+tran_10 <- numeric(32)
+obs <- numeric(32)
+prop <- numeric(32)
+for (i in 1:dim(state_pattern)[1]){
+  for (j in 1:dim(state_pattern)[2]){
+    
+    if (j != 1){
+      if (locally_decoded[i,j-1] != locally_decoded[i,j]){
+        if (locally_decoded[i,j-1] == 0){
+          tran_01[j] <- tran_01[j] + freq_vec[i]
+        } else {
+          tran_10[j] <- tran_10[j] + freq_vec[i]
+        }
+      }
+    }
+    
+    if(!is.na(state_pattern[i,j])){
+      obs[j] <- obs[j] + freq_vec[i]
+    }
+    
+    if(locally_decoded[i,j] == 1){
+      prop[j] <- prop[j] + (freq_vec[i])
+    }
+    
+    
+    
+  }
+}
+df <- data.frame(time = c(1:32), transitions_01 = tran_01, transitions_10 = tran_10, observations = obs, proportion = prop/sum(freq_vec))
+df_pi_0 <- data.frame(proportion = c("Percent of 0 Stayers", "Percent of All 0's"), pi = c(pi_0, rs_0/sum(freq_vec)))
+df_pi_1 <- data.frame(proportion = c("Percent of 1 Stayers", "Percent of All 1's"), pi = c(pi_1, rs_1/sum(freq_vec)))
+
+
+ggplot(data = df_pi_0, aes(x = proportion, y = pi))+
+  geom_bar(stat = "identity") + xlab("") + ylab("Proportion of Population")
+
+ggplot(data = df_pi_1, aes(x = proportion, y = pi))+
+  geom_bar(stat = "identity") + xlab("") + ylab("Proportion of Population")
+
+ggplot(data = df, aes(x = time, y = transitions_01)) + 
+  geom_bar(stat = "identity") + 
+  ylab("Number of 01 Transitions") + xlab("Time")
+
+ggplot(data = df, aes(x = time, y = transitions_10)) + 
+  geom_bar(stat = "identity") + 
+  ylab("Number of 10 Transitions") + xlab("Time")
+
+ggplot(data = df, aes(x = time, y = transitions_10+transitions_01)) + 
+  geom_bar(stat = "identity") + 
+  ylab("Total Number of Transitions") + xlab("Time")
+
+ggplot(data = df, aes(x = time, y = observations)) + 
+  geom_bar(stat = "identity") + 
+  ylab("Number of Observations") + xlab("Time")
+
+ggplot(data = df, aes(x = time, y = proportion)) + 
+  geom_bar(stat = "identity") + 
+  coord_cartesian(ylim=c(.6,.7)) + 
+  ylab("Proportion of 1's") + xlab("Time")
+```
