@@ -1,0 +1,173 @@
+---
+title: "State Project Viterbi"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+numOfStates <- function(data){
+  return(c(0:1))
+}
+```
+
+```{r}
+Classification <- function(x_val, y_val){
+  if (is.na(x_val)){return(1)}
+  if (x_val == y_val){return(1)}
+  else {return(0)}
+}
+```
+
+```{r}
+Normalize <- function(data){
+  for (i in 1:dim(data)[1]){
+    if (sum(data[i,],na.rm = TRUE) != 0){
+      data[i,] <- data[i,]/sum(data[i,])
+    }
+  }
+  return(data)
+}
+```
+
+```{r}
+ViterbiInd <- function(data_ind, init, tran, pi_0, pi_1){
+  k <- length(numOfStates(data_ind))
+  max_time <- length(data_ind)
+  dp_mat <- matrix(0,k, max_time)
+  global_decode <- numeric(max_time)
+  stayer_vec <- c(pi_0,pi_1)
+  
+  for (state in 1:k){
+    dp_mat[state,1] <- stayer_vec[state] + exp(log(1 - stayer_vec[1] - stayer_vec[2]) + log(init[state]))
+    dp_mat[state,1] <- dp_mat[state,1] * Classification(data_ind[1],(state - 1))
+    
+    
+    global_decode[1] <- which.max(dp_mat[,1]) - 1
+    
+    if (max(data_ind, na.rm = T) == 0){
+      global_decode[1] <- 0
+    }
+
+    
+    if (global_decode[1] == 0){
+      stayer_vec[2] <- 0
+    } else if (global_decode[1] == 1){
+      stayer_vec[1] <- 0
+    }
+  }
+  
+  for (time in 2:max_time){
+    for(state in 1:k){
+      
+      past_max <-  global_decode[time - 1] + 1
+      dp_mat[state,time] <- stayer_vec[state] + exp(log(1 - stayer_vec[1] - stayer_vec[2]) + log(dp_mat[past_max,(time - 1)]) + log(tran[past_max,state]))
+      dp_mat[state,time] <- dp_mat[state,time] * Classification(data_ind[time],(state - 1))
+     
+      
+    }
+    
+    global_decode[time] <- which.max(dp_mat[,time]) - 1
+    if (global_decode[time] == 0){
+      stayer_vec[2] <- 0
+    } else if (global_decode[time] == 1){
+      stayer_vec[1] <- 0
+    }
+    
+  }
+  return(global_decode)
+}
+```
+
+```{r}
+Viterbi <- function(data, init, tran, pi_0, pi_1){
+  decoded_mat <- matrix(0, dim(data)[1], dim(data)[2])
+  for(i in 1:dim(data)[1]){
+    decoded_mat[i,] <- ViterbiInd(data[i,], init, tran, pi_0, pi_1)
+  }
+  return(decoded_mat)
+}
+```
+
+```{r}
+load("StateProjectSlow.rda")
+ms_init <- state_project_parameters[[1]]
+ms_tran <- state_project_parameters[[2]]
+pi_0 <- state_project_parameters[[3]]
+pi_1 <- state_project_parameters[[4]]
+
+decoded_chains <- Viterbi(state_pattern, ms_init, ms_tran, pi_0,pi_1)
+
+ViterbiInd(state_pattern[158,], ms_init,ms_tran,pi_0,pi_1)
+```
+
+```{r}
+LocalDecode <- function(data,init,tran,pi_0,pi_1){
+  local_mat <- matrix(0, dim(data)[1], dim(data)[2])
+  for (i in 1:dim(data)[1]){
+    local_mat[i,] <- LocalDecodeInd(data,i,init,tran,pi_0,pi_1)
+  }
+  return(local_mat)
+}
+```
+
+```{r}
+LocalDecodeInd <- function(data, ind, init, tran, pi_0, pi_1){
+  new_ind_data <- data[ind,] 
+  forward_full <- ForwardIter(data,dim(data)[2], ind, init, tran)
+  backward_full <- BackwardIter(data,1,ind,tran)
+  
+  if (min(data[ind,], na.rm = T) == 1){
+    pi_0_current <- 0
+    pi_1_current <- pi_1
+  } else if (max(data[ind,], na.rm = T) == 0){
+    pi_0_current <- pi_0
+    pi_1_current <- 0
+  } else {
+    pi_0_current <- 0
+    pi_1_current <- 0
+  }
+  
+  for (i in 1:length(data[ind,])){
+    denom <- pi_0_current + pi_1_current + ((1 - pi_0_current - pi_1_current)*(forward_full[[i]] %*% backward_full[[i]]))
+    zero_prob <- (((1 - pi_0_current - pi_1_current) * (forward_full[[i]][1] * backward_full[[i]][1])) + pi_0_current) /denom
+    one_prob <- (((1 - pi_0_current - pi_1_current) * (forward_full[[i]][2] * backward_full[[i]][2])) + pi_1_current) /denom
+    
+    if (zero_prob > one_prob){
+      new_ind_data[i] <- 0
+    } else {
+      new_ind_data[i] <- 1
+    }
+    
+  }
+  
+  return(new_ind_data)
+}
+```
+
+```{r}
+load("StateProjectSlow.rda")
+ms_init <- state_project_parameters[[1]]
+ms_tran <- state_project_parameters[[2]]
+pi_0 <- state_project_parameters[[3]]
+pi_1 <- state_project_parameters[[4]]
+
+locally_decoded <- LocalDecode(state_pattern,ms_init,ms_tran,pi_0,pi_1)
+
+```
+
+```{r}
+library(prodlim)
+for (ind in 1:dim(catch2)[1]){
+  true_data <- catch2[ind,]
+  true_ind <- row.match(true_data,state_pattern)
+  catch2[ind,] <- locally_decoded[true_ind]
+}
+
+```
+
+
+
