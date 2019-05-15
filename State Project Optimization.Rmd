@@ -1,0 +1,147 @@
+---
+title: "State Project Testing Values of Pi"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#Calculates the MC evolution probability of an individual in a data matrix
+#The r_0 * prod(p_ij)
+#For instance if the individuals chain was 0 1 0 
+#This would return the product of r_0 * p_01 * p_10
+#Does not take stayer into account at all as thats done in a later fuction
+#Only ever used in the function ProbX
+ProbXind <- function(prob_data,ind, init_0, tran_00,tran_11){
+
+  init_1 <- (1 - init_0)
+  tran_01 <- (1 - tran_00)
+  tran_10 <- (1 - tran_11)
+  
+  init <- c(init_0,init_1)
+  tran <- matrix(c(tran_00, tran_01,tran_10,tran_11),2,2,byrow = T)
+  
+  p_current <- 1
+  
+  if (prob_data[ind,1] == 0){
+    p_current <- p_current * init_0
+  } else {
+    p_current <- p_current * init_1
+  }
+  
+  power_up <- 0
+  for (time in 1:(dim(prob_data)[2]-1)){
+    if (!is.na(prob_data[ind,(time + 1)])){
+      
+      if (!is.na(prob_data[ind,time])){
+        last_state <- prob_data[ind,time]
+      }
+      
+      powered_up_tran <- tran
+      if(power_up > 0){
+        for (i in 1:power_up){
+          powered_up_tran <- powered_up_tran %*% tran
+        }
+      }
+      
+      if (last_state == 0){
+        if (prob_data[ind, (time+1)] == 0){
+          p_current <- p_current * powered_up_tran[1,1]
+        } else if(prob_data[ind,(time+1)] == 1){
+          p_current <- p_current * powered_up_tran[1,2]
+        }
+        
+      } else if (last_state == 1){
+        if (prob_data[ind,(time+1)] == 0){
+          p_current <- p_current * powered_up_tran[2,1]
+        } else if(prob_data[ind,(time+1)] == 1){
+          p_current <- p_current * powered_up_tran[2,2]
+        }
+      }
+      power_up <- 0
+    } else {
+      power_up <- power_up + 1
+      if (!is.na(prob_data[ind,time])){
+        last_state <- prob_data[ind,time]
+      }
+    }
+    
+    
+  }
+    
+  return(p_current)
+}
+```
+
+```{r}
+#Calculates P(X)
+#Two possibilities 
+#All zeros (with possibility of stayer), and Either all ones or a mixture (with no possibility of stayer) 
+#incorporates (1 - pi_0into the last case)
+LogLike <- function(init_0, tran_00, tran_11, pi_0, pi_1){
+  current_data <- pattern_data
+  current_freq_vec <- freq_vec
+  
+  init_1 <- 1 - init_0
+  tran_01 <- 1 - tran_00
+  tran_10 <- 1 - tran_11
+  
+  #The total probability
+  p_total <- 0
+  for (ind in 1:dim(current_data)[1]){
+    p_current <- 0
+    #This is statement is if all states are 0
+    if (max(current_data[ind,], na.rm = T) == 0){
+      p_current <- (pi_0 + (1 - pi_0) * ProbXind(current_data, ind, init_0, tran_00, tran_11)) 
+    } else if (min(current_data[ind,], na.rm = T) == 1){
+      p_current <- (pi_1 + (1 - pi_1) * ProbXind(current_data, ind, init_0, tran_00, tran_11)) 
+    } else {
+      p_current <- ((1 - pi_0 - pi_1) * ProbXind(current_data, ind, init_0, tran_00, tran_11))
+    }
+    
+    #Adds log(P(X_i)) to total probability 
+    p_total <- p_total + (log(p_current) * current_freq_vec[ind])
+  }
+  
+  
+  return(-p_total)
+}
+```
+
+```{r}
+ProbXB <- function(pi_0, pi_1){
+  return(LogLike(ms_init[1], ms_tran[1,1],ms_tran[2,2], pi_0, pi_1))
+}
+
+ProbXC <- function(init_0, tran_00, tran_11){
+  return(LogLike(init_0, tran_00, tran_11, ms_stayer[1], ms_stayer[2]))
+}
+```
+
+```{r}
+LogLikeB <- function(x) LogLike(x[1],x[2],x[3],x[4],x[5])
+A <- matrix(c(1,0,0,0,0,-1,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,0,0,1,0,0,0,0,-1,0,0,0,-1,-1),11,5,byrow = T)
+b <- c(0,-1,0,-1,0,-1,0,-1,0,-1,-1)
+constrOptim(c(ms_init[1], ms_tran[1,1],ms_tran[2,2], ms_stayer[1], ms_stayer[2]), LogLikeB, NULL, A, b)
+```
+
+```{r}
+#Plots contour of P(X) dependent on pi_0
+#As the above p_1, ygrid isnt in use
+library(plotly)
+ygrid <- seq(0.01,.99,.05)
+#xgrid corresponds to different values of pi_0
+xgrid <- seq(0.01,.99,.05)
+data.fit <-  expand.grid(x = xgrid, y = ygrid)
+
+#creates value grid
+for (i in 1:dim(data.fit)[1]){
+  data.fit[i,3] <- ProbXC(ms_init[1],data.fit[i,1], data.fit[i,2])
+}
+
+#Plots the different values of pi_0 along the x axis while the color tells P(X) with the given pi_0
+plot_ly(x = data.fit[,1], y = data.fit[,2], z = data.fit[,3], type = "contour")
+```
+
